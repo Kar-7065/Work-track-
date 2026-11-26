@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>WorkTrack</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f4f6f9;--card:#fff;--tx:#1b2430;--mu:#6b7686;--ac:#1d6fd8;--bd:#dde3ea;--ok:#1a8f4c;--er:#c93434}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161c;--card:#1b222b;--tx:#e8edf3;--mu:#8f9bab;--ac:#5aa2ff;--bd:#2c3642;--ok:#44c27a;--er:#ff6b6b}}
+:root[data-theme="dark"]{--bg:#12161c;--card:#1b222b;--tx:#e8edf3;--mu:#8f9bab;--ac:#5aa2ff;--bd:#2c3642;--ok:#44c27a;--er:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px system-ui,sans-serif}
+header{background:var(--ac);color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+header b{font-size:17px}#clk{font-size:13px;text-align:right}
+main{max-width:760px;margin:0 auto;padding:12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
+nav{display:flex;gap:6px;overflow-x:auto;padding:8px 12px;background:var(--card);border-bottom:1px solid var(--bd)}
+nav button{white-space:nowrap;background:none;border:1px solid var(--bd);color:var(--tx);border-radius:20px;padding:6px 12px}
+nav button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+input,select,textarea{width:100%;padding:9px;margin:4px 0 8px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+button.b{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:10px 14px;font:inherit;margin:2px 4px 2px 0}
+button.g{background:var(--ok)}button.r{background:var(--er)}button.s{background:var(--mu)}
+h3{margin:0 0 8px}small,.mu{color:var(--mu)}.row{display:flex;gap:8px}.row>*{flex:1}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px solid var(--bd);padding:5px;text-align:left;white-space:nowrap}
+img.p{max-width:100%;max-height:160px;border-radius:8px}.tag{display:inline-block;padding:1px 8px;border-radius:10px;background:var(--bd);font-size:12px}
+#print{display:none}
+@media print{body>*:not(#print){display:none!important}#print{display:block;color:#000;background:#fff;padding:10px}#print td,#print th{border:1px solid #888;color:#000}}
+</style></head><body>
+<header><b>WorkTrack</b><div id="clk"></div></header>
+<div id="app"></div><div id="print"></div>
+<script>
+const TZ='Asia/Kolkata',K='worktrack_v1';
+let D,S=null,tab='',mem=null;
+const dfl=()=>({admins:[{user:'admin1',pass:'Admin1@Delhi26'},{user:'admin2',pass:'Admin2@Delhi26'}],workers:[],att:[],work:[],upd:[],pay:[]});
+try{D=JSON.parse(localStorage.getItem(K))}catch(e){}
+if(!D)D=dfl();
+function save(){try{localStorage.setItem(K,JSON.stringify(D));return true}catch(e){alert('Storage full. Download a backup and delete old photos/voice notes.');return false}}
+const E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=id=>document.getElementById(id);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const fT=ms=>ms?new Date(ms).toLocaleTimeString('en-IN',{timeZone:TZ,hour12:true,hour:'2-digit',minute:'2-digit'}).toUpperCase():'-';
+const fD=ms=>new Date(ms).toLocaleDateString('en-CA',{timeZone:TZ});
+const today=()=>fD(Date.now());
+const fDT=ms=>fD(ms)+' '+fT(ms);
+setInterval(tick,1000);function tick(){$('clk').innerHTML='Delhi time<br>'+new Date().toLocaleString('en-IN',{timeZone:TZ,hour12:true,day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'}).toUpperCase()+(S?' · <a href="#" style="color:#fff" onclick="S=null;R();return false">Logout</a>':'')}
+const W=id=>D.workers.find(w=>w.id==id)||{name:'?'};
+
+function R(){tick();if(!S){$('app').innerHTML=`<main><div class="card"><h3>Login</h3><input id="lu" placeholder="Username / phone / email" autocapitalize="off"><input id="lp" type="password" placeholder="Password"><button class="b" onclick="login()">Login</button><p class="mu">Workers: use the username (or phone/email) and password given by your admin.</p></div></main>`;return}
+ const tabs=S.role=='admin'?['Workers','Attendance','Work','Updates','Salary','Backup','Settings']:['Today','History','Salary'];
+ if(!tabs.includes(tab))tab=tabs[0];
+ $('app').innerHTML=`<nav>${tabs.map(t=>`<button class="${t==tab?'on':''}" onclick="tab='${t}';R()">${t}</button>`).join('')}</nav><main id="v"></main>`;
+ $('v').innerHTML=(S.role=='admin'?A:Wk)[tab]();}
+function login(){const u=$('lu').value.trim().toLowerCase(),p=$('lp').value;
+ const a=D.admins.find(x=>x.user==u&&x.pass==p);if(a){S={role:'admin',id:a.user};tab='';return R()}
+ const w=D.workers.find(x=>[x.user,x.phone,x.email].some(v=>v&&v.toLowerCase()==u)&&x.pass==p);
+ if(w){S={role:'worker',id:w.id};tab='';return R()}alert('Wrong username or password')}
+
+/* ---------- ADMIN ---------- */
+const A={
+Workers(){return `<div class="card"><h3>${window.ew?'Edit':'Add'} worker</h3>${wf()}</div><div class="card tw"><table><tr><th>Name</th><th>User</th><th>Pass</th><th>Hrs</th><th>Shift</th><th>Salary</th><th></th></tr>${D.workers.map(w=>`<tr><td>${E(w.name)}<br><small>${E(w.phone)} ${E(w.email)}</small></td><td>${E(w.user)}</td><td>${E(w.pass)}</td><td>${w.hours}</td><td>${w.shift}</td><td>₹${w.salary}</td><td><button class="b s" onclick="ew=D.workers.find(x=>x.id=='${w.id}');R()">Edit</button><button class="b r" onclick="delW('${w.id}')">Del</button></td></tr>`).join('')||'<tr><td>No workers yet</td></tr>'}</table></div>`},
+Attendance(){return `<div class="card tw"><h3>Attendance</h3>${attT(D.att.slice().reverse(),1)}</div>`},
+Work(){return `<div class="card"><h3>Give daily work</h3><select id="wt"><option value="all">All workers</option>${D.workers.map(w=>`<option value="${w.id}">${E(w.name)}</option>`).join('')}</select><input id="wd" type="date" value="${today()}"><textarea id="wx" rows="3" placeholder="Work to do"></textarea><button class="b" onclick="addWork()">Assign</button></div>`+D.work.slice().reverse().map(k=>`<div class="card"><b>${k.date}</b> → ${k.to=='all'?'All':E(W(k.to).name)}<br>${E(k.text)} <button class="b r" onclick="D.work=D.work.filter(x=>x.id!='${k.id}');save();R()">x</button></div>`).join('')},
+Updates(){return D.upd.slice().reverse().map(updC).join('')||'<div class="card">No worker updates yet.</div>'},
+Salary(){return salUI(1)},
+Backup(){return `<div class="card"><h3>PDF backup</h3><select id="bt"><option value="all">Everything</option><option value="att">Attendance</option><option value="sal">Salary</option><option value="pay">Payments</option><option value="work">Daily work</option><option value="stock">Stock</option></select><input id="bm" type="month"><select id="bw"><option value="">All workers</option>${D.workers.map(w=>`<option value="${w.id}">${E(w.name)}</option>`).join('')}</select><button class="b" onclick="pdf()">Make PDF</button><p class="mu">Opens print screen: choose "Save as PDF".</p></div><div class="card"><h3>Full data file</h3><button class="b g" onclick="dl()">Download backup (.json)</button><p>Restore:</p><input type="file" accept=".json" onchange="restore(this)"></div>`},
+Settings(){return `<div class="card"><h3>Change password</h3>${D.admins.map(a=>`<div class="row"><input id="ap_${a.user}" placeholder="New password for ${a.user}"><button class="b" style="flex:0" onclick="setAP('${a.user}')">Save</button></div>`).join('')}</div>`+note()}
+};
+function wf(){const w=window.ew||{};return `<input id="n" placeholder="Name" value="${E(w.name)}"><div class="row"><input id="ph" type="tel" placeholder="Phone number (required)" value="${E(w.phone)}"><input id="em" type="email" placeholder="Email (optional)" value="${E(w.email)}"></div><div class="row"><input id="u" placeholder="Username (you create)" value="${E(w.user)}"><input id="pw" placeholder="Password (you set)" value="${E(w.pass)}"></div><div class="row"><input id="h" type="number" placeholder="Working hours per day" value="${w.hours||8}"><input id="sl" type="number" placeholder="Monthly salary ₹" value="${w.salary||''}"></div><select id="sh"><option ${w.shift=='Day'?'selected':''}>Day</option><option ${w.shift=='Night'?'selected':''}>Night</option></select><button class="b" onclick="saveW()">Save</button>${w.id?'<button class="b s" onclick="ew=null;R()">Cancel</button>':''}`}
+function saveW(){const o={name:$('n').value.trim(),phone:$('ph').value.trim(),email:$('em').value.trim(),user:$('u').value.trim().toLowerCase(),pass:$('pw').value,hours:+$('h').value||8,salary:+$('sl').value||0,shift:$('sh').value};
+ if(!o.name||!o.phone||!o.user||!o.pass)return alert('Name, phone number, username and password are needed');
+ if(D.workers.some(x=>x.user==o.user&&x.id!=(ew&&ew.id)))return alert('Username already used');
+ if(ew&&ew.id)Object.assign(ew,o);else D.workers.push({id:uid(),...o});ew=null;save();R()}
+let ew=null;
+function delW(id){if(confirm('Delete worker and keep old records?')){D.workers=D.workers.filter(w=>w.id!=id);save();R()}}
+function addWork(){const t=$('wx').value.trim();if(!t)return;D.work.push({id:uid(),to:$('wt').value,date:$('wd').value,text:t});save();R()}
+function setAP(u){const v=$('ap_'+u).value;if(v.length<6)return alert('Min 6 characters');D.admins.find(a=>a.user==u).pass=v;save();alert('Saved');R()}
+function attT(rows,showW){return `<table><tr>${showW?'<th>Worker</th>':''}<th>Date</th><th>Shift</th><th>In</th><th>Out</th><th>Hrs</th><th>OT</th><th>Location</th></tr>${rows.map(r=>`<tr>${showW?`<td>${E(W(r.w).name)}</td>`:''}<td>${r.date}</td><td>${r.shift}</td><td>${fT(r.in)}</td><td>${fT(r.out)}</td><td>${r.out?r.hrs.toFixed(2):'-'}</td><td>${r.out?r.ot.toFixed(2):'-'}</td><td>${loc(r.iloc)}${r.oloc?' / '+loc(r.oloc):''}</td></tr>`).join('')||'<tr><td>No records</td></tr>'}</table>`}
+const loc=l=>l?`<a href="https://maps.google.com/?q=${l[0]},${l[1]}" target="_blank" rel="noopener">${l[0].toFixed(4)},${l[1].toFixed(4)}</a>`:'n/a';
+function updC(u){return `<div class="card"><b>${E(W(u.w).name)}</b> <small>${u.date}</small><br>${E(u.text)}${u.stock?`<br><span class="tag">Stock used</span> ${E(u.stock)}`:''}${u.img?`<br><img class="p" src="${u.img}">`:''}${u.aud?`<br><audio controls src="${u.aud}"></audio>`:''}</div>`}
+function note(){return `<p class="mu" style="font-size:12px">Data is saved in this browser only. Use Backup → Download to move it.</p>`}
+
+/* ---------- SALARY ---------- */
+function salUI(adm){const m=window.sm||today().slice(0,7);const ws=adm?D.workers:[W(S.id)];
+ return `<div class="card"><h3>Salary — ${m}</h3><input type="month" value="${m}" onchange="sm=this.value;R()"><div class="tw"><table><tr><th>Worker</th><th>Salary</th><th>Advance</th><th>Salary paid</th><th>Balance</th><th>OT hrs</th></tr>${ws.map(w=>{const p=D.pay.filter(x=>x.w==w.id&&x.month==m),a=sum(p,'advance'),s=sum(p,'salary'),ot=D.att.filter(x=>x.w==w.id&&x.date.startsWith(m)&&x.out).reduce((t,x)=>t+x.ot,0);return `<tr><td>${E(w.name)}</td><td>₹${w.salary}</td><td>₹${a}</td><td>₹${s}</td><td><b>₹${w.salary-a-s}</b></td><td>${ot.toFixed(1)}</td></tr>`}).join('')}</table></div></div>`+(adm?`<div class="card"><h3>Record payment</h3><select id="pw2">${D.workers.map(w=>`<option value="${w.id}">${E(w.name)}</option>`).join('')}</select><div class="row"><select id="pt"><option value="advance">Advance</option><option value="salary">Full / salary</option></select><input id="pa" type="number" placeholder="Amount ₹"></div><button class="b" onclick="addPay('${m}')">Add for ${m}</button></div><div class="card tw"><table><tr><th>Date</th><th>Worker</th><th>Type</th><th>₹</th><th></th></tr>${D.pay.filter(x=>x.month==m).map(x=>`<tr><td>${x.date}</td><td>${E(W(x.w).name)}</td><td>${x.type}</td><td>${x.amt}</td><td><button class="b r" onclick="D.pay=D.pay.filter(y=>y.id!='${x.id}');save();R()">x</button></td></tr>`).join('')}</table></div>`:'')}
+const sum=(p,t)=>p.filter(x=>x.type==t).reduce((a,x)=>a+x.amt,0);
+function addPay(m){const a=+$('pa').value;if(!a||!D.workers.length)return;D.pay.push({id:uid(),w:$('pw2').value,month:m,type:$('pt').value,amt:a,date:today()});save();R()}
+
+/* ---------- WORKER ---------- */
+let img='',aud='',rec=null;
+const Wk={
+Today(){const w=W(S.id),t=today(),open=D.att.find(a=>a.w==w.id&&!a.out);
+ const tasks=D.work.filter(k=>(k.to=='all'||k.to==w.id)&&k.date==t);
+ return `<div class="card"><h3>Hello ${E(w.name)}</h3><span class="tag">${w.shift} shift</span> <span class="tag">${w.hours} hrs/day</span><p>${open?`Checked in at <b>${fT(open.in)}</b>`:'Not checked in'}</p>${open?'<button class="b r" onclick="punch()">Check OUT</button>':`<select id="sf"><option ${w.shift=='Day'?'selected':''}>Day</option><option ${w.shift=='Night'?'selected':''}>Night</option></select><button class="b g" onclick="punch()">Check IN</button>`}<p id="gs" class="mu"></p></div>
+ <div class="card"><h3>Today's work</h3>${tasks.map(k=>`<p>• ${E(k.text)}</p>`).join('')||'<p class="mu">No work assigned today.</p>'}</div>
+ <div class="card"><h3>My work update</h3><textarea id="ut" rows="3" placeholder="What did you do?"></textarea><input id="us" placeholder="Stock used (e.g. cement 5 bags)"><input type="file" accept="image/*" capture="environment" onchange="pick(this)"><div id="pv"></div><button class="b s" id="rb" onclick="voice()">🎤 Record voice note</button><div id="av"></div><br><button class="b" onclick="postU()">Save update</button></div>`+D.upd.filter(u=>u.w==w.id).slice(-3).reverse().map(updC).join('')},
+History(){return `<div class="card tw"><h3>My attendance</h3>${attT(D.att.filter(a=>a.w==S.id).reverse(),0)}</div>`},
+Salary(){return salUI(0)},
+Settings(){return `<div class="card"><h3>Change my password</h3><input id="np" placeholder="New password"><button class="b" onclick="wp()">Save</button></div>`}};
+function wp(){const v=$('np').value;if(v.length<4)return alert('Too short');W(S.id).pass=v;save();alert('Saved')}
+function punch(){const w=W(S.id);$('gs').textContent='Getting location…';
+ const go=l=>{const n=Date.now(),o=D.att.find(a=>a.w==w.id&&!a.out);
+  if(o){o.out=n;o.oloc=l;o.hrs=(n-o.in)/36e5;o.ot=Math.max(0,o.hrs-w.hours)}
+  else D.att.push({id:uid(),w:w.id,date:fD(n),in:n,iloc:l,shift:$('sf').value,hrs:0,ot:0});save();R()};
+ if(!navigator.geolocation)return go(null);
+ navigator.geolocation.getCurrentPosition(p=>go([p.coords.latitude,p.coords.longitude]),()=>{if(confirm('Location unavailable. Save without location?'))go(null);else $('gs').textContent='Allow location and try again'},{enableHighAccuracy:true,timeout:15000})}
+function pick(i){const f=i.files[0];if(!f)return;const im=new Image();im.onload=()=>{const c=document.createElement('canvas'),k=Math.min(1,600/Math.max(im.width,im.height));c.width=im.width*k;c.height=im.height*k;c.getContext('2d').drawImage(im,0,0,c.width,c.height);img=c.toDataURL('image/jpeg',.6);$('pv').innerHTML='<img class="p" src="'+img+'">'};im.src=URL.createObjectURL(f)}
+async function voice(){const b=$('rb');if(rec){rec.stop();return}
+ try{const st=await navigator.mediaDevices.getUserMedia({audio:true}),ch=[];rec=new MediaRecorder(st);rec.ondataavailable=e=>ch.push(e.data);
+  rec.onstop=()=>{st.getTracks().forEach(t=>t.stop());rec=null;b.textContent='🎤 Re-record';const r=new FileReader();r.onload=()=>{aud=r.result;$('av').innerHTML='<audio controls src="'+aud+'"></audio>'};r.readAsDataURL(new Blob(ch,{type:ch[0]&&ch[0].type}))};
+  rec.start();b.textContent='⏹ Stop recording';setTimeout(()=>rec&&rec.stop(),60000)}catch(e){alert('Microphone not allowed')}}
+function postU(){const t=$('ut').value.trim(),s=$('us').value.trim();if(!t&&!s&&!img&&!aud)return alert('Add something first');
+ D.upd.push({id:uid(),w:S.id,date:today(),text:t,stock:s,img,aud});img=aud='';if(save())R();else D.upd.pop()}
+
+/* ---------- BACKUP ---------- */
+function pdf(){const t=$('bt').value,m=$('bm').value,w=$('bw').value;const fm=x=>(!m||(x.date||x.month||'').startsWith(m))&&(!w||x.w==w);
+ const att=D.att.filter(fm),pay=D.pay.filter(fm),work=D.work.filter(k=>(!m||k.date.startsWith(m))&&(!w||k.to==w||k.to=='all')),stk=D.upd.filter(fm);
+ let h=`<h2>WorkTrack backup</h2><p>${m||'All months'} · ${w?E(W(w).name):'All workers'} · ${new Date().toLocaleString('en-IN',{timeZone:TZ,hour12:true})}</p>`;
+ if(t=='all'||t=='att')h+='<h3>Attendance</h3>'+attT(att,1);
+ if(t=='all'||t=='sal'){h+='<h3>Salary</h3><table><tr><th>Worker</th><th>Month</th><th>Salary</th><th>Advance</th><th>Paid</th><th>Balance</th></tr>';const ms=[...new Set(pay.map(x=>x.month).concat(m?[m]:[today().slice(0,7)]))];D.workers.filter(x=>!w||x.id==w).forEach(x=>ms.forEach(mo=>{const p=D.pay.filter(y=>y.w==x.id&&y.month==mo);h+=`<tr><td>${E(x.name)}</td><td>${mo}</td><td>${x.salary}</td><td>${sum(p,'advance')}</td><td>${sum(p,'salary')}</td><td>${x.salary-sum(p,'advance')-sum(p,'salary')}</td></tr>`}));h+='</table>'}
+ if(t=='all'||t=='pay')h+='<h3>Payments</h3><table><tr><th>Date</th><th>Worker</th><th>Month</th><th>Type</th><th>₹</th></tr>'+pay.map(x=>`<tr><td>${x.date}</td><td>${E(W(x.w).name)}</td><td>${x.month}</td><td>${x.type}</td><td>${x.amt}</td></tr>`).join('')+'</table>';
+ if(t=='all'||t=='work')h+='<h3>Daily work</h3><table><tr><th>Date</th><th>To</th><th>Work</th></tr>'+work.map(k=>`<tr><td>${k.date}</td><td>${k.to=='all'?'All':E(W(k.to).name)}</td><td>${E(k.text)}</td></tr>`).join('')+'</table>';
+ if(t=='all'||t=='stock')h+='<h3>Updates &amp; stock used</h3><table><tr><th>Date</th><th>Worker</th><th>Note</th><th>Stock</th></tr>'+stk.map(u=>`<tr><td>${u.date}</td><td>${E(W(u.w).name)}</td><td>${E(u.text)}</td><td>${E(u.stock)}</td></tr>`).join('')+'</table>';
+ $('print').innerHTML=h;setTimeout(()=>window.print(),200)}
+async function dl(){const data=JSON.stringify(D),name='worktrack-backup-'+today()+'.json';
+ try{const d=await claude.use('downloads');if(d){await d.save({filename:name,data});return}}catch(e){}
+ try{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data]));a.download=name;a.click()}catch(e){alert('Download not available here')}}
+function restore(i){const f=i.files[0];if(!f||!confirm('Replace ALL current data?'))return;f.text().then(t=>{try{const x=JSON.parse(t);if(!x.workers)throw 0;D=x;save();R()}catch(e){alert('Invalid backup file')}})}
+R();
+</script></body></html>

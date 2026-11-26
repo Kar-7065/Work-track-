@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Work Manager</title>
+<style>
+:root{--bg:#f3f5f9;--card:#fff;--ink:#17202e;--mut:#6b7686;--line:#e3e8ef;--pri:#2457d6;--ok:#14935a;--bad:#d23b3b;--warn:#c27a09}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+#top{position:sticky;top:0;z-index:5;background:var(--pri);color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+#top small{display:block;opacity:.85}#clock{font-weight:600;text-align:right;font-size:13px}
+main{padding:12px 12px 90px;max-width:760px;margin:auto}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;overflow-x:auto;z-index:5;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1 0 64px;border:0;background:none;padding:7px 2px;font-size:11px;color:var(--mut)}
+nav button span{display:block;font-size:19px}nav button.on{color:var(--pri);font-weight:700}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;margin-bottom:10px}
+.card.ok{border-color:#9fd9bb;background:#f2fbf6}.card.warn{border-color:#f0cf8a;background:#fffaf0}
+.big{font-size:21px;font-weight:700}.muted{color:var(--mut)}.small{font-size:12px}
+h3{margin:14px 2px 8px;font-size:16px}
+.btn{display:block;width:100%;border:0;border-radius:11px;padding:13px;font-size:16px;font-weight:600;color:#fff;background:var(--pri);margin-top:10px}
+.btn.green{background:var(--ok)}.btn.red{background:var(--bad)}.btn.gray{background:#e8ecf2;color:var(--ink)}
+.btn.sm{display:inline-block;width:auto;padding:7px 12px;font-size:13px;margin:6px 6px 0 0}
+input,select,textarea{width:100%;padding:11px;border:1px solid #cfd6e1;border-radius:10px;font-size:16px;background:#fff;margin:4px 0 8px;font-family:inherit}
+textarea{min-height:80px}label{font-size:12px;color:var(--mut);font-weight:600}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.tp{display:flex;gap:4px;align-items:center}.tp select{margin:4px 0 8px}
+.seg{display:flex;gap:8px}.seg button{flex:1;padding:11px;border:1px solid #cfd6e1;background:#fff;border-radius:10px;font-size:15px}.seg button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600;background:#e8ecf2}
+.badge.g{background:#d9f3e5;color:#0b6b41}.badge.r{background:#fbe0e0;color:#a02020}.badge.y{background:#fdecc8;color:#8a5a05}
+.kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line)}.kv:last-child{border:0}
+.pic{max-width:100%;border-radius:10px;margin-top:8px;display:block}audio{width:100%;margin-top:8px}
+a{color:var(--pri)}.mask{position:fixed;inset:0;background:#0007;z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px}
+#toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:#17202e;color:#fff;padding:10px 16px;border-radius:99px;z-index:30;display:none;max-width:90%;text-align:center}
+#busy{position:fixed;inset:0;background:#fff8;z-index:25;display:none;align-items:center;justify-content:center;font-weight:700}
+.login{max-width:380px;margin:12vh auto;padding:0 16px}.login h1{text-align:center;margin-bottom:4px}
+</style>
+</head>
+<body>
+<div id="app"></div><div id="toast"></div><div id="busy">Please wait…</div>
+<script>
+/* If you host this file on Netlify / GitHub Pages instead of Apps Script, put your Apps Script /exec URL here. */
+const API_URL='';
+
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+const S={token:store.get('wm_token')||'',user:null,tab:'',off:0,workers:[],shiftType:'Day',timer:null};
+try{S.user=JSON.parse(store.get('wm_user')||'null')}catch(e){}
+
+const money=n=>'₹'+Number(n||0).toLocaleString('en-IN');
+const hm=m=>{m=Math.round(Number(m)||0);return Math.floor(m/60)+'h '+String(m%60).padStart(2,'0')+'m'};
+const t12=v=>{const[p,q]=String(v||'09:00').split(':');const h=+p;return(h%12||12)+':'+q+' '+(h<12?'AM':'PM')};
+const istDate=()=>new Date(Date.now()+S.off).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+const mo=()=>istDate().slice(0,7);
+const clockText=()=>new Date(Date.now()+S.off).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}).toUpperCase();
+
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display='none',3500)}
+function busy(on){$('#busy').style.display=on?'flex':'none'}
+function modal(html){const m=document.createElement('div');m.className='mask';m.innerHTML='<div class="sheet">'+html+'</div>';m.onclick=e=>{if(e.target===m)m.remove()};document.body.appendChild(m);return m}
+const closeModal=()=>$$('.mask').forEach(m=>m.remove());
+function confirmx(msg){return new Promise(r=>{const m=modal(`<p>${esc(msg)}</p><div class="row"><button class="btn gray" id="cn">Cancel</button><button class="btn red" id="cy">Yes</button></div>`);m.querySelector('#cn').onclick=()=>{m.remove();r(false)};m.querySelector('#cy').onclick=()=>{m.remove();r(true)}})}
+async function run(fn,showBusy){try{if(showBusy)busy(true);return await fn()}catch(e){toast(e.message||String(e))}finally{busy(false)}}
+
+async function call(action,payload){
+  let r;
+  if(API_URL){const res=await fetch(API_URL,{method:'POST',body:JSON.stringify({token:S.token,action,payload}),redirect:'follow'});r=await res.json()}
+  else{if(!(window.google&&google.script&&google.script.run))throw new Error('App is not connected yet: the admin must paste the Web app URL into API_URL in this file.');
+    r=await new Promise((ok,no)=>google.script.run.withSuccessHandler(ok).withFailureHandler(e=>no(new Error(e.message||e))).api(S.token,action,payload||{}))}
+  if(!r.ok){if(r.error==='SESSION'){logout(true);throw new Error('Session expired. Please log in again.')}throw new Error(r.error)}
+  return r.data;
+}
+
+/* ---------- Login ---------- */
+function showLogin(){
+  clearInterval(S.timer);
+  $('#app').innerHTML=`<div class="login"><h1>Work Manager</h1><p class="muted" style="text-align:center">Log in with the username and password given by your admin</p>
+  <div class="card"><label>Username / phone / email</label><input id="lu" autocapitalize="none" autocomplete="username"><label>Password</label><input id="lp" type="password" autocomplete="current-password">
+  <button class="btn" onclick="doLogin()">Log in</button></div></div>`;
+  $('#lp').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+}
+function doLogin(){run(async()=>{const r=await call('login',{username:$('#lu').value,password:$('#lp').value});S.token=r.token;S.user=r.user;store.set('wm_token',r.token);store.set('wm_user',JSON.stringify(r.user));start()},true)}
+function logout(silent){if(!silent&&S.token)call('logout',{token:S.token}).catch(()=>{});S.token='';S.user=null;store.del('wm_token');store.del('wm_user');showLogin()}
+
+/* ---------- Shell ---------- */
+const WT=[['home','🏠','Home'],['tasks','📋','My Work'],['log','📝','Update'],['stock','📦','Stock'],['pay','💰','Salary'],['me','👤','Me']];
+const AT=[['dash','🏠','Home'],['workers','👥','Workers'],['att','📍','Attendance'],['tasks','📋','Tasks'],['logs','🖼️','Updates'],['stock','📦','Stock'],['pay','💰','Salary'],['bk','📄','Backup'],['me','👤','Me']];
+const isAdmin=()=>S.user&&S.user.role==='admin';
+async function start(){
+  if(!S.token||!S.user)return showLogin();
+  $('#app').innerHTML=`<div id="top"><div><b>${esc(S.user.name)}</b><small>${isAdmin()?'Admin':'Worker'}</small></div><div id="clock"></div></div><main id="view"></main><nav id="nav"></nav>`;
+  clearInterval(S.clk);const tickClock=()=>{const c=$('#clock');if(c)c.textContent=clockText()};tickClock();S.clk=setInterval(tickClock,1000);
+  try{const me=await call('me');S.user=me;store.set('wm_user',JSON.stringify(me))}catch(e){return}
+  if(isAdmin())await loadWorkers();
+  setTab(isAdmin()?'dash':'home');
+}
+async function loadWorkers(){S.workers=(await call('users')).filter(u=>u.role==='worker')}
+function setTab(t){
+  clearInterval(S.timer);S.tab=t;
+  const T=isAdmin()?AT:WT;$('#nav').innerHTML=T.map(x=>`<button class="${x[0]===t?'on':''}" onclick="setTab('${x[0]}')"><span>${x[1]}</span>${x[2]}</button>`).join('');
+  const V=isAdmin()?AV:WV;scrollTo(0,0);run(()=>V[t]());
+}
+const view=h=>{$('#view').innerHTML=h};
+const wopts=(all,sel)=>(all?'<option value="ALL">All workers</option>':'')+S.workers.filter(w=>w.active||all).map(w=>`<option value="${w.id}" ${w.id===sel?'selected':''}>${esc(w.name)}</option>`).join('');
+
+/* time picker in 12-hour format */
+function tp(id,v){const[H,M]=(v||'09:00').split(':').map(Number),h12=H%12||12;
+  return`<div class="tp" id="${id}"><select>${[...Array(12)].map((_,i)=>`<option ${i+1===h12?'selected':''}>${i+1}</option>`).join('')}</select>:<select>${[...Array(12)].map((_,i)=>{const m=String(i*5).padStart(2,'0');return`<option ${+m===M?'selected':''}>${m}</option>`}).join('')}</select><select><option ${H<12?'selected':''}>AM</option><option ${H>=12?'selected':''}>PM</option></select></div>`}
+function tv(id){const s=$$('#'+id+' select');let h=+s[0].value%12;if(s[2].value==='PM')h+=12;return String(h).padStart(2,'0')+':'+s[1].value}
+
+/* ---------- WORKER VIEWS ---------- */
+const WV={};
+const getLoc=()=>new Promise((ok,no)=>{if(!navigator.geolocation)return no(new Error('Location is not supported on this device'));
+  navigator.geolocation.getCurrentPosition(p=>ok({lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}),
+  e=>no(new Error(e.code===1?(window.self!==window.top?'Location is blocked inside this Google page. Open the app from the hosted link given by your admin.':'Location permission denied. Allow location for this app (browser settings) and try again.'):'Could not get location. Turn on GPS and try again.')),{enableHighAccuracy:true,timeout:20000,maximumAge:0})});
+WV.home=async()=>{
+  view('<div class="card muted">Loading…</div>');
+  const d=await call('today');S.off=d.serverNow-Date.now();S.d=d;const sc=d.sched;
+  let h=`<div class="card"><div class="muted">Your working hours</div><div class="big">${t12(sc.start)} – ${t12(sc.end)}</div><div class="muted small">${sc.type} shift · ${hm(sc.minutes)} · work after this is overtime</div></div>`;
+  if(d.open)h+=`<div class="card ok"><div class="muted">Checked in</div><div class="big">${esc(d.open.in12)}</div><div id="timer" class="big" style="color:var(--ok)"></div><div id="otn" class="small muted"></div><button class="btn red" onclick="doOut()">Check Out</button></div>`;
+  else h+=`<div class="card"><label>Shift today</label><div class="seg"><button id="sd" onclick="segSet('Day')">☀️ Day</button><button id="sn" onclick="segSet('Night')">🌙 Night</button></div><button class="btn green" onclick="doIn()">Check In</button><div class="muted small" style="margin-top:8px">Your location and Delhi time are saved when you tap.</div></div>`;
+  if(d.todayRecs.length)h+='<h3>Today</h3>'+d.todayRecs.map(r=>`<div class="card"><div class="kv"><span>In – Out</span><b>${r.in12} – ${r.out12}</b></div><div class="kv"><span>Worked</span><b>${r.worked}</b></div><div class="kv"><span>Overtime</span><b>${r.ot}</b></div></div>`).join('');
+  h+=`<h3>This month</h3><div class="card"><div class="kv"><span>Days present</span><b>${d.month.days}</b></div><div class="kv"><span>Hours worked</span><b>${hm(d.month.workedMin)}</b></div><div class="kv"><span>Overtime</span><b>${hm(d.month.otMin)}</b></div></div>`;
+  view(h);
+  if(d.open){const tick=()=>{const m=(Date.now()+S.off-d.open.inMs)/60000;const t=$('#timer');if(!t)return;t.textContent='Working '+hm(m);$('#otn').textContent=m>d.open.sched?'Overtime running: '+hm(m-d.open.sched):'Overtime starts after '+hm(d.open.sched)};tick();S.timer=setInterval(tick,15000)}
+  else segSet(sc.type);
+};
+function segSet(t){S.shiftType=t;$('#sd').classList.toggle('on',t==='Day');$('#sn').classList.toggle('on',t==='Night')}
+function doIn(){run(async()=>{toast('Getting your location…');const l=await getLoc();await call('checkIn',{...l,shiftType:S.shiftType});toast('Checked in ✔');WV.home()},true)}
+function doOut(){run(async()=>{let l={};try{l=await getLoc()}catch(e){}await call('checkOut',l);toast('Checked out ✔');WV.home()},true)}
+
+WV.tasks=async()=>{
+  const L=await call('taskList',{});const T=istDate();
+  view('<h3>Today\'s work from admin</h3>'+(L.length?L.map(t=>`<div class="card ${t.status==='Done'?'ok':''}"><div class="row" style="align-items:center"><b>${esc(t.title)}</b><span style="flex:0"><span class="badge ${t.status==='Done'?'g':'y'}">${t.status}</span></span></div>
+  ${t.details?`<div style="margin-top:4px">${esc(t.details)}</div>`:''}<div class="muted small">${t.date<T?'⚠ Pending from '+esc(t.dateLabel):esc(t.dateLabel)}</div>${t.note?`<div class="small">Your note: ${esc(t.note)}</div>`:''}
+  ${t.status==='Done'?`<button class="btn gray sm" onclick="taskMark('${t.id}',false)">Undo</button>`:`<button class="btn green sm" onclick="taskDonePrompt('${t.id}')">Mark done</button>`}</div>`).join(''):'<div class="card muted">No work assigned for today.</div>'));
+};
+function taskDonePrompt(id){modal(`<h3>Mark as done</h3><label>Note (optional)</label><textarea id="tn"></textarea><button class="btn green" onclick="taskMark('${id}',true)">Done</button>`)}
+function taskMark(id,done){run(async()=>{await call('taskDone',{id,status:done?'Done':'Pending',note:done&&$('#tn')?$('#tn').value:''});closeModal();isAdmin()?AV.tasks():WV.tasks()},true)}
+
+let LOGF={photo:'',audio:'',rec:null,chunks:[]};
+const logCard=(l,adm)=>`<div class="card">${adm?`<b>${esc(l.name)}</b> · `:''}<span class="muted small">${esc(l.dateLabel)}, ${l.time}</span>${l.note?`<div style="margin-top:4px;white-space:pre-wrap">${esc(l.note)}</div>`:''}<div>
+  ${l.photoId?`<button class="btn gray sm" onclick="viewFile('${l.photoId}','img',this)">📷 View photo</button>`:''}${l.audioId?`<button class="btn gray sm" onclick="viewFile('${l.audioId}','aud',this)">🎤 Play voice note</button>`:''}</div></div>`;
+function viewFile(id,kind,btn){run(async()=>{btn.textContent='Loading…';const r=await call('fileGet',{id});const box=btn.parentElement;btn.remove();box.insertAdjacentHTML('beforeend',kind==='img'?`<img class="pic" src="${r.data}">`:`<audio controls src="${r.data}"></audio>`)})}
+WV.log=async()=>{
+  LOGF={photo:'',audio:'',rec:null,chunks:[]};
+  const L=await call('logList',{month:mo()});
+  view(`<h3>Write today's work update</h3><div class="card"><label>Note</label><textarea id="ln" placeholder="What work did you do?"></textarea>
+  <label>Photo of work</label><input type="file" id="lph" accept="image/*" onchange="pickPhoto(this)"><div id="lphp"></div>
+  <label>Voice note</label><div><button class="btn gray sm" id="recb" onclick="toggleRec()">🎤 Record</button><span id="recs" class="muted small"></span></div>
+  <input type="file" id="lau" accept="audio/*" capture onchange="pickAudio(this)"><div class="muted small">If recording does not work, use the box above to pick / record an audio file.</div><div id="lap"></div>
+  <button class="btn" onclick="saveLog()">Save update</button></div><h3>My updates this month</h3>`+(L.map(l=>logCard(l,false)).join('')||'<div class="card muted">Nothing yet.</div>'));
+};
+const rd=f=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=()=>no(new Error('Could not read file'));r.readAsDataURL(f)});
+function pickPhoto(inp){const f=inp.files[0];if(!f)return;run(async()=>{const url=await rd(f);const img=await new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>no(new Error('Could not open image'));i.src=url});
+  const k=Math.min(1,1280/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=img.width*k;c.height=img.height*k;c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  LOGF.photo=c.toDataURL('image/jpeg',.72);$('#lphp').innerHTML=`<img class="pic" src="${LOGF.photo}">`},true)}
+async function pickAudio(inp){const f=inp.files[0];if(!f)return;if(f.size>20e6)return toast('Audio too large (max 20 MB)');await run(async()=>{LOGF.audio=await rd(f);$('#lap').innerHTML=`<audio controls src="${LOGF.audio}"></audio>`},true)}
+async function toggleRec(){
+  if(LOGF.rec){LOGF.rec.stop();return}
+  try{
+    if(!window.MediaRecorder||!navigator.mediaDevices)throw 0;
+    const st=await navigator.mediaDevices.getUserMedia({audio:true}),r=new MediaRecorder(st);LOGF.chunks=[];
+    r.ondataavailable=e=>LOGF.chunks.push(e.data);
+    r.onstop=async()=>{st.getTracks().forEach(t=>t.stop());clearInterval(LOGF.ti);LOGF.rec=null;$('#recb').textContent='🎤 Record again';$('#recs').textContent='';
+      const b=new Blob(LOGF.chunks,{type:r.mimeType||'audio/webm'});LOGF.audio=await rd(b);$('#lap').innerHTML=`<audio controls src="${LOGF.audio}"></audio>`};
+    r.start();LOGF.rec=r;$('#recb').textContent='⏹ Stop';let s=0;LOGF.ti=setInterval(()=>{s++;$('#recs').textContent=' Recording '+s+'s';if(s>=180)r.stop()},1000);
+  }catch(e){toast('Recording is not available here. Use the audio box below instead.')}
+}
+function saveLog(){run(async()=>{await call('logAdd',{note:$('#ln').value,photo:LOGF.photo,audio:LOGF.audio});toast('Saved ✔');WV.log()},true)}
+
+const UNITS=['pcs','kg','g','ltr','ml','m','box','bag','packet','other'];
+const stockForm=()=>`<div class="card"><label>Item used</label><input id="si" placeholder="e.g. Cement"><div class="row"><div><label>Quantity</label><input id="sq" type="number" inputmode="decimal" step="any"></div><div><label>Unit</label><select id="su">${UNITS.map(u=>`<option>${u}</option>`).join('')}</select></div></div><label>Note (optional)</label><input id="sn2"><button class="btn" onclick="saveStock()">Save stock used</button></div>`;
+function saveStock(){run(async()=>{await call('stockAdd',{item:$('#si').value,qty:$('#sq').value,unit:$('#su').value,note:$('#sn2').value});toast('Saved ✔');setTab('stock')},true)}
+const stockTable=L=>{const tot={};L.forEach(r=>{const k=r.item.toLowerCase()+'|'+r.unit;tot[k]=tot[k]||{item:r.item,unit:r.unit,q:0};tot[k].q+=r.qty});
+  return(Object.values(tot).length?'<h3>Totals</h3><div class="card">'+Object.values(tot).map(t=>`<div class="kv"><span>${esc(t.item)}</span><b>${+t.q.toFixed(2)} ${esc(t.unit)}</b></div>`).join('')+'</div>':'')+'<h3>Entries</h3>'+(L.map(r=>`<div class="card"><b>${esc(r.item)}</b> – ${r.qty} ${esc(r.unit)}${r.name?`<div class="small">By ${esc(r.name)}</div>`:''}<div class="muted small">${esc(r.dateLabel)}, ${r.time}${r.note?' · '+esc(r.note):''}</div></div>`).join('')||'<div class="card muted">No entries.</div>')};
+WV.stock=async()=>{const L=await call('stockList',{month:mo()});view('<h3>Stock I used</h3>'+stockForm()+stockTable(L))};
+
+const salCard=r=>`<div class="card"><b>${esc(r.name)}</b><div class="kv"><span>Monthly salary</span><b>${money(r.base)}</b></div><div class="kv"><span>Days present</span><b>${r.days}</b></div><div class="kv"><span>Overtime (${money(r.rate)}/hr)</span><b>${hm(r.otMin)} = ${money(r.otPay)}</b></div><div class="kv"><span>Total due</span><b>${money(r.total)}</b></div><div class="kv"><span>Advance taken</span><b>${money(r.advance)}</b></div><div class="kv"><span>Salary paid</span><b>${money(r.paid)}</b></div><div class="kv"><span>Balance to pay</span><b style="color:${r.balance>0?'var(--warn)':'var(--ok)'}">${money(r.balance)}</b></div></div>`;
+const payRows=L=>L.map(r=>`<div class="card"><div class="row"><b>${money(r.amount)}</b><span style="text-align:right"><span class="badge ${r.type==='Advance'?'y':'g'}">${r.type}</span></span></div><div class="muted small">${esc(r.dateLabel)} · for ${r.month}${r.name&&isAdmin()?' · '+esc(r.name):''}${r.note?' · '+esc(r.note):''}</div>${isAdmin()?`<button class="btn gray sm" onclick="payDel('${r.id}')">Delete</button>`:''}</div>`).join('')||'<div class="card muted">No payments.</div>';
+WV.pay=async()=>{
+  const m=S.pm||mo();S.pm=m;const[s,p]=await Promise.all([call('salary',{month:m}),call('payList',{month:m})]);
+  view(`<label>Month</label><input type="month" value="${m}" onchange="S.pm=this.value;WV.pay()">${s.map(salCard).join('')||'<div class="card muted">No data.</div>'}<h3>Payments this month</h3>${payRows(p)}`);
+};
+
+/* ---------- shared: me ---------- */
+const meView=()=>{const u=S.user;
+  view(`${u.mustChange?'<div class="card warn"><b>Please change your password</b><div class="small">You are using the default password.</div></div>':''}<div class="card"><b>${esc(u.name)}</b><div class="muted">Username: ${esc(u.username)}${u.phone?'<br>Phone: '+esc(u.phone):''}${u.email?'<br>Email: '+esc(u.email):''}</div>${u.role==='worker'?`<div class="kv"><span>Hours</span><b>${t12(u.shiftStart)} – ${t12(u.shiftEnd)} (${u.shiftType})</b></div>`:''}</div>
+  <h3>Change password</h3><div class="card"><label>Old password</label><input id="op" type="password"><label>New password</label><input id="np" type="password"><button class="btn" onclick="chPw()">Change password</button></div><button class="btn gray" onclick="logout()">Log out</button>`)};
+WV.me=meView;
+function chPw(){run(async()=>{const r=await call('changePassword',{oldPassword:$('#op').value,newPassword:$('#np').value});S.token=r.token;store.set('wm_token',r.token);S.user.mustChange=false;toast('Password changed ✔');meView()},true)}
+
+/* ---------- ADMIN VIEWS ---------- */
+const AV={};
+AV.dash=async()=>{
+  const d=await call('dash');
+  view(`<div class="row"><div class="card"><div class="muted small">Workers</div><div class="big">${d.workers}</div></div><div class="card"><div class="muted small">Present today</div><div class="big">${d.presentToday}</div></div></div>
+  <div class="row"><div class="card"><div class="muted small">Work done</div><div class="big">${d.tasksDone}/${d.tasksTotal}</div></div><div class="card"><div class="muted small">Overtime today</div><div class="big">${d.otToday}</div></div></div>
+  ${S.user.mustChange?'<div class="card warn"><b>Change your default password</b> in the Me tab.</div>':''}
+  <h3>Working now (${d.working.length})</h3>${d.working.map(w=>`<div class="card ok"><b>${esc(w.name)}</b> <span class="badge">${w.shiftType}</span><div class="muted small">Since ${w.since} ${w.map?`· <a target="_blank" href="${w.map}">📍 location</a>`:''}</div></div>`).join('')||'<div class="card muted">Nobody is checked in.</div>'}
+  <h3>Not checked in today (${d.absent.length})</h3><div class="card">${d.absent.map(esc).join(', ')||'<span class="muted">Everyone has checked in.</span>'}</div>`);
+};
+
+AV.workers=async()=>{
+  const U=await call('users');S.workers=U.filter(u=>u.role==='worker');S.users=U;
+  view(`<button class="btn" onclick="workerForm()">+ Add worker</button><h3>Workers</h3>`+(S.workers.map(w=>`<div class="card ${w.active?'':'warn'}"><div class="row" style="align-items:center"><b>${esc(w.name)}</b><span style="text-align:right"><span class="badge ${w.active?'g':'r'}">${w.active?'Active':'Inactive'}</span></span></div>
+  <div class="muted small">User: ${esc(w.username)}${w.phone?' · '+esc(w.phone):''}${w.email?' · '+esc(w.email):''}<br>${t12(w.shiftStart)} – ${t12(w.shiftEnd)} (${w.shiftType}) · Salary ${money(w.salary)} · OT ${money(w.rate)}/hr</div>
+  <button class="btn gray sm" onclick="workerForm('${w.id}')">Edit</button><button class="btn gray sm" onclick="pwForm('${w.id}')">Password</button><button class="btn gray sm" onclick="setActive('${w.id}',${!w.active})">${w.active?'Deactivate':'Activate'}</button></div>`).join('')||'<div class="card muted">No workers yet. Tap “Add worker”.</div>')+
+  `<h3>Admins</h3>`+U.filter(u=>u.role==='admin').map(a=>`<div class="card"><b>${esc(a.name)}</b><div class="muted small">User: ${esc(a.username)}</div><button class="btn gray sm" onclick="pwForm('${a.id}')">Change password</button></div>`).join(''));
+};
+function workerForm(id){const w=S.workers.find(x=>x.id===id)||{shiftStart:'09:00',shiftEnd:'18:00',shiftType:'Day',salary:'',otRate:''};
+  modal(`<h3>${id?'Edit worker':'Add worker'}</h3><label>Full name</label><input id="wn" value="${esc(w.name)}"><label>Username (worker logs in with this)</label><input id="wu" autocapitalize="none" value="${esc(w.username)}">
+  <label>${id?'New password (leave blank to keep)':'Password'}</label><input id="wp" type="text" autocomplete="off"><label>Phone (can also be used to log in)</label><input id="wph" type="tel" value="${esc(w.phone)}">
+  <label>Email (can also be used to log in)</label><input id="we" type="email" autocapitalize="none" value="${esc(w.email)}"><div class="row"><div><label>Work starts</label>${tp('ws',w.shiftStart)}</div><div><label>Work ends</label>${tp('we2',w.shiftEnd)}</div></div>
+  <label>Shift type</label><select id="wst"><option ${w.shiftType==='Day'?'selected':''}>Day</option><option ${w.shiftType==='Night'?'selected':''}>Night</option></select>
+  <div class="row"><div><label>Monthly salary (₹)</label><input id="wsal" type="number" inputmode="numeric" value="${w.salary}"></div><div><label>Overtime ₹/hour (blank = auto)</label><input id="wot" type="number" inputmode="numeric" value="${w.otRate}"></div></div>
+  <button class="btn" onclick="saveWorker('${id||''}')">Save</button>`)}
+function saveWorker(id){run(async()=>{await call('userSave',{id,name:$('#wn').value,username:$('#wu').value,password:$('#wp').value,phone:$('#wph').value,email:$('#we').value,shiftStart:tv('ws'),shiftEnd:tv('we2'),shiftType:$('#wst').value,salary:$('#wsal').value,otRate:$('#wot').value});closeModal();toast('Saved ✔');AV.workers()},true)}
+function pwForm(id){const name=(S.users.find(x=>x.id===id)||{}).name;modal(`<h3>New password for ${esc(name)}</h3><input id="npw" type="text" autocomplete="off" placeholder="At least 5 characters"><button class="btn" onclick="setPw('${id}')">Update password</button>`)}
+function setPw(id){run(async()=>{await call('userSetPassword',{id,password:$('#npw').value});closeModal();toast('Password updated ✔')},true)}
+function setActive(id,active){run(async()=>{await call('userActive',{id,active});AV.workers()},true)}
+
+const filt=(extra='')=>`<div class="row"><div><label>Month</label><input type="month" id="fm" value="${S.fm||mo()}" onchange="S.fm=this.value;AV[S.tab]()"></div><div><label>Worker</label><select id="fw" onchange="S.fw=this.value;AV[S.tab]()">${wopts(true,S.fw)}</select></div></div>${extra}`;
+const fp=()=>({month:S.fm||mo(),userId:S.fw||'ALL'});
+
+AV.att=async()=>{
+  const L=await call('attList',fp());
+  view(filt()+`<div class="card muted small">${L.length} records · ${hm(L.reduce((t,r)=>t+r.worked,0))} worked · ${hm(L.reduce((t,r)=>t+r.ot,0))} overtime</div>`+L.map(r=>`<div class="card"><div class="row" style="align-items:center"><b>${esc(r.name)}</b><span style="text-align:right"><span class="badge ${r.status==='Working'?'g':''}">${esc(r.status)}</span></span></div>
+  <div class="muted small">${esc(r.dateLabel)} · ${r.shiftType} shift</div><div class="kv"><span>In</span><b>${r.in12} ${r.inMap?`<a target="_blank" href="${r.inMap}">📍</a>`:''}</b></div><div class="kv"><span>Out</span><b>${r.out12||'-'} ${r.outMap?`<a target="_blank" href="${r.outMap}">📍</a>`:''}</b></div>
+  <div class="kv"><span>Worked</span><b>${hm(r.worked)}</b></div><div class="kv"><span>Overtime</span><b>${hm(r.ot)}</b></div><button class="btn gray sm" onclick="attDel('${r.id}')">Delete</button></div>`).join('')||'<div class="card muted">No records.</div>');
+};
+async function attDel(id){if(await confirmx('Delete this attendance record?'))run(async()=>{await call('attDelete',{id});AV.att()},true)}
+
+AV.tasks=async()=>{
+  const d=S.fd||istDate(),L=await call('taskList',{date:d,userId:S.fw||'ALL'});
+  view(`<button class="btn" onclick="taskForm()">+ Give daily work</button><div class="row"><div><label>Date</label><input type="date" value="${d}" onchange="S.fd=this.value;AV.tasks()"></div><div><label>Worker</label><select onchange="S.fw=this.value;AV.tasks()">${wopts(true,S.fw)}</select></div></div>`+
+  (L.map(t=>`<div class="card ${t.status==='Done'?'ok':''}"><div class="row" style="align-items:center"><b>${esc(t.title)}</b><span style="text-align:right"><span class="badge ${t.status==='Done'?'g':'y'}">${t.status}</span></span></div><div class="small">For ${esc(t.name)}</div>${t.details?`<div>${esc(t.details)}</div>`:''}${t.note?`<div class="small">Worker note: ${esc(t.note)}</div>`:''}${t.done12?`<div class="muted small">Done ${esc(t.done12)}</div>`:''}<button class="btn gray sm" onclick="taskDel('${t.id}')">Delete</button></div>`).join('')||'<div class="card muted">No work given for this date.</div>'));
+};
+function taskForm(){modal(`<h3>Give daily work</h3><label>Worker</label><select id="tw">${wopts(false)}<option value="ALL">All active workers</option></select><label>Date</label><input type="date" id="td" value="${S.fd||istDate()}"><label>Work</label><input id="tt" placeholder="e.g. Paint 2nd floor"><label>Details (optional)</label><textarea id="tdt"></textarea><button class="btn" onclick="saveTask()">Give work</button>`)}
+function saveTask(){run(async()=>{const n=await call('taskAdd',{userId:$('#tw').value,date:$('#td').value,title:$('#tt').value,details:$('#tdt').value});closeModal();toast('Given to '+n+' worker(s) ✔');AV.tasks()},true)}
+async function taskDel(id){if(await confirmx('Delete this work?'))run(async()=>{await call('taskDelete',{id});AV.tasks()},true)}
+
+AV.logs=async()=>{const L=await call('logList',fp());view(filt()+(L.map(l=>logCard(l,true)).join('')||'<div class="card muted">No updates.</div>'))};
+AV.stock=async()=>{const L=await call('stockList',fp());view(filt()+stockTable(L))};
+
+AV.pay=async()=>{
+  const m=S.fm||mo(),u=S.fw||'ALL',[s,p]=await Promise.all([call('salary',{month:m,userId:u}),call('payList',{month:m,userId:u})]);
+  view(filt('<button class="btn" onclick="payForm()">+ Add advance / salary payment</button>')+s.map(salCard).join('')+'<h3>Payments</h3>'+payRows(p));
+};
+function payForm(){modal(`<h3>Add payment</h3><label>Worker</label><select id="pw">${wopts(false,S.fw)}</select><label>Type</label><select id="pt"><option value="Advance">Advance</option><option value="Salary">Full / part salary payment</option></select>
+  <label>Amount (₹)</label><input id="pa" type="number" inputmode="numeric"><label>For salary month</label><input id="pm" type="month" value="${S.fm||mo()}"><label>Payment date</label><input id="pd" type="date" value="${istDate()}"><label>Note</label><input id="pn"><button class="btn" onclick="savePay()">Save</button>`)}
+function savePay(){run(async()=>{await call('payAdd',{userId:$('#pw').value,type:$('#pt').value,amount:$('#pa').value,month:$('#pm').value,date:$('#pd').value,note:$('#pn').value});closeModal();toast('Saved ✔');AV.pay()},true)}
+async function payDel(id){if(await confirmx('Delete this payment?'))run(async()=>{await call('payDelete',{id});AV.pay()},true)}
+
+AV.bk=()=>{
+  view(`<h3>PDF backup</h3><div class="card"><label>Data</label><select id="bt"><option value="full">Everything (full backup)</option><option value="attendance">Attendance</option><option value="salary">Salary summary</option><option value="payments">Advance &amp; salary payments</option><option value="tasks">Daily work given</option><option value="logs">Work updates</option><option value="stock">Stock used</option><option value="workers">Workers list</option></select>
+  <label>Month</label><input type="month" id="bm" value="${mo()}"><label><input type="checkbox" id="ba" style="width:auto;margin-right:6px">All months</label><br><br><label>Worker</label><select id="bw">${wopts(true)}</select>
+  <button class="btn" onclick="getPdf(false)">⬇ Download PDF</button><button class="btn gray" onclick="getPdf(true)">✉ Email PDF to admin</button></div>
+  <div class="card muted small">Everything is also always saved in your Google Sheet. To get a backup email automatically every night, run <b>enableDailyBackup</b> once in the Apps Script editor.</div>`);
+};
+function getPdf(email){run(async()=>{const q={type:$('#bt').value,month:$('#ba').checked?'ALL':$('#bm').value,userId:$('#bw').value};
+  const r=await call(email?'emailBackup':'pdf',q);if(email)return toast('Emailed to '+r.sentTo);
+  const bin=atob(r.b64),u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+  const url=URL.createObjectURL(new Blob([u8],{type:'application/pdf'}));
+  try{const a=document.createElement('a');a.href=url;a.download=r.name;document.body.appendChild(a);a.click();a.remove()}catch(e){}
+  modal(`<h3>PDF ready</h3><p class="muted">${esc(r.name)}</p><a class="btn" style="text-align:center;text-decoration:none" href="${url}" download="${esc(r.name)}" target="_blank">Open / save PDF</a>`)},true)}
+AV.me=meView;
+
+/* ---------- boot ---------- */
+start();
+</script>
+</body>
+</html>
